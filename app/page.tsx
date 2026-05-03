@@ -1,10 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { dummyLinks } from "@/data/links";
+import { LinkItem } from "@/data/links";
+import { db } from "@/lib/firebase";
+import { collection, addDoc, getDocs, query, orderBy } from "firebase/firestore";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -52,8 +54,30 @@ type LinkFormValues = z.infer<typeof linkFormSchema>;
 // 페이지 컴포넌트
 // ────────────────────────────────────────────────────────────────
 export default function Page() {
-  const [links, setLinks] = useState(dummyLinks);
+  const [links, setLinks] = useState<LinkItem[]>([]);
   const [isOpen, setIsOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const fetchLinks = async () => {
+    setIsLoading(true);
+    try {
+      const q = query(collection(db, "users/anonymous/links"), orderBy("createdAt", "desc"));
+      const snapshot = await getDocs(q);
+      const fetchedLinks: LinkItem[] = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...(doc.data() as Omit<LinkItem, "id">),
+      }));
+      setLinks(fetchedLinks);
+    } catch (error) {
+      console.error("Firestore getDocs Error:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchLinks();
+  }, []);
 
   const {
     register,
@@ -65,7 +89,7 @@ export default function Page() {
     defaultValues: { title: "", url: "" },
   });
 
-  const onSubmit = (data: LinkFormValues) => {
+  const onSubmit = async (data: LinkFormValues) => {
     let domain = data.url;
     try {
       domain = new URL(data.url).hostname;
@@ -73,19 +97,21 @@ export default function Page() {
       // 파싱 불가 시 url 그대로 사용
     }
 
-    const newLink = {
-      id: Date.now().toString(),
-      title: data.title,
-      url: data.url,
-      faviconUrl: `https://www.google.com/s2/favicons?domain=${domain}&sz=64`,
-      isVisible: true,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-
-    setLinks([newLink, ...links]);
-    setIsOpen(false);
-    reset();
+    try {
+      await addDoc(collection(db, "users/anonymous/links"), {
+        title: data.title,
+        url: data.url,
+        faviconUrl: `https://www.google.com/s2/favicons?domain=${domain}&sz=64`,
+        isVisible: true,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+      setIsOpen(false);
+      reset();
+      await fetchLinks();
+    } catch (error) {
+      console.error("Error adding document: ", error);
+    }
   };
 
   const handleOpenChange = (open: boolean) => {
@@ -191,58 +217,100 @@ export default function Page() {
 
         {/* 링크 목록 */}
         <div className="w-full flex flex-col gap-4">
-          {visibleLinks.map((link) => (
-            <a
-              key={link.id}
-              href={link.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="group block w-full rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-            >
-              <Card className="w-full rounded-2xl transition-all duration-300 border-border/50 hover:border-violet-500/50 hover:shadow-lg hover:-translate-y-1 hover:bg-accent/40 bg-card">
-                <CardContent className="relative flex items-center p-4 min-h-[76px]">
-                  {/* 파비콘 */}
-                  <div className="absolute left-4 w-12 h-12 bg-background/50 border shadow-sm rounded-xl flex items-center justify-center overflow-hidden group-hover:shadow-md transition-shadow">
-                    <img
-                      src={link.faviconUrl}
-                      alt={`${link.title} icon`}
-                      className="w-6 h-6 object-contain group-hover:scale-110 transition-transform duration-300"
-                      loading="lazy"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).src =
-                          "https://www.google.com/s2/favicons?domain=example.com&sz=64";
-                      }}
-                    />
-                  </div>
+          {isLoading ? (
+            // 로딩 스피너
+            <div className="flex flex-col items-center justify-center py-12 gap-3">
+              <svg
+                className="animate-spin text-violet-500"
+                xmlns="http://www.w3.org/2000/svg"
+                width="28"
+                height="28"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+              </svg>
+              <p className="text-sm text-muted-foreground">불러오는 중...</p>
+            </div>
+          ) : visibleLinks.length === 0 ? (
+            // 빈 상태
+            <div className="flex flex-col items-center justify-center py-12 gap-2 text-muted-foreground">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="40"
+                height="40"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="opacity-30"
+              >
+                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+              </svg>
+              <p className="text-sm font-medium">아직 추가된 링크가 없어요.</p>
+              <p className="text-xs opacity-60">위 버튼으로 첫 번째 링크를 추가해보세요!</p>
+            </div>
+          ) : (
+            visibleLinks.map((link) => (
+              <a
+                key={link.id}
+                href={link.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="group block w-full rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              >
+                <Card className="w-full rounded-2xl transition-all duration-300 border-border/50 hover:border-violet-500/50 hover:shadow-lg hover:-translate-y-1 hover:bg-accent/40 bg-card">
+                  <CardContent className="relative flex items-center p-4 min-h-[76px]">
+                    {/* 파비콘 */}
+                    <div className="absolute left-4 w-12 h-12 bg-background/50 border shadow-sm rounded-xl flex items-center justify-center overflow-hidden group-hover:shadow-md transition-shadow">
+                      <img
+                        src={link.faviconUrl}
+                        alt={`${link.title} icon`}
+                        className="w-6 h-6 object-contain group-hover:scale-110 transition-transform duration-300"
+                        loading="lazy"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).src =
+                            "https://www.google.com/s2/favicons?domain=example.com&sz=64";
+                        }}
+                      />
+                    </div>
 
-                  {/* 텍스트 */}
-                  <div className="flex-1 px-16 text-center">
-                    <span className="font-semibold text-[15px] text-foreground/90 group-hover:text-foreground transition-colors">
-                      {link.title}
-                    </span>
-                  </div>
+                    {/* 텍스트 */}
+                    <div className="flex-1 px-16 text-center">
+                      <span className="font-semibold text-[15px] text-foreground/90 group-hover:text-foreground transition-colors">
+                        {link.title}
+                      </span>
+                    </div>
 
-                  {/* 화살표 마이크로 인터랙션 */}
-                  <div className="absolute right-5 opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300 text-muted-foreground group-hover:text-violet-500">
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="20"
-                      height="20"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.5"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M5 12h14" />
-                      <path d="m12 5 7 7-7 7" />
-                    </svg>
-                  </div>
-                </CardContent>
-              </Card>
-            </a>
-          ))}
+                    {/* 화살표 마이크로 인터랙션 */}
+                    <div className="absolute right-5 opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0 transition-all duration-300 text-muted-foreground group-hover:text-violet-500">
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="20"
+                        height="20"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M5 12h14" />
+                        <path d="m12 5 7 7-7 7" />
+                      </svg>
+                    </div>
+                  </CardContent>
+                </Card>
+              </a>
+            ))
+          )}
         </div>
       </div>
     </main>
