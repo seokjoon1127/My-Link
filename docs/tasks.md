@@ -5,3 +5,6 @@
 - [x] 3. 컴포넌트 강화: shadcn의 기본 `Card` 컴포넌트에 Tailwind Glassmorphism (유리 질감, blur, 투명도 등) CSS Utility를 주입.
 - [x] 4. 애니메이션 추가: 카드에 마우스 호버(Hover) 시 발생하는 인터랙티브한 마이크로 애니메이션 효과 (Scale, Shadow glow 등) 디테일 세팅하기.
 - [x] 5. 검증 단계: `npm run build` 명령어 수행 및 실제 구동 환경에서 UI가 의도된 프레임/비율대로 깨짐 없이 출력되는지 확인 (진행 중).
+- [x] 6. 다이얼로그 추가: `shadcn/ui` 모달(`Dialog`)과 `Input`을 설치하고, 폼 UI 구현.
+- [x] 7. 로컬 상태 연동: `app/page.tsx`를 Client Component화 하고, `useState` 및 Google Favicon API를 연결하여 화면 새로고침 없이 즉각 링크 목록이 갱신되도록 연동.
+- [x] 8. 입력 검증: `zod` + `react-hook-form` + `@hookform/resolvers` 설치 및 연결, Zod 스키마 정의, 필드별 에러 메시지 표시 구현.
